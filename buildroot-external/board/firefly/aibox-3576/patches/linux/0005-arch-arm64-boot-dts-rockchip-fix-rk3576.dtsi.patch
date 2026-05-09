@@ -1,0 +1,861 @@
+From ff57127f55030daa168759a57a900b6b075fe5c8 Mon Sep 17 00:00:00 2001
+From: Tsunglung Yang <zonglong@gmail.com>
+Date: Wed, 13 May 2026 17:29:24 +0800
+Subject: [PATCH 5/7] arch: arm64: boot: dts: rockchip: fix rk3576.dtsi
+
+---
+ arch/arm64/boot/dts/rockchip/rk3576.dtsi | 690 +++++++++++++++++++++++
+ 1 file changed, 690 insertions(+)
+ mode change 100644 => 100755 arch/arm64/boot/dts/rockchip/rk3576.dtsi
+
+diff --git a/arch/arm64/boot/dts/rockchip/rk3576.dtsi b/arch/arm64/boot/dts/rockchip/rk3576.dtsi
+index 671241b20..989687abc
+--- a/arch/arm64/boot/dts/rockchip/rk3576.dtsi
++++ b/arch/arm64/boot/dts/rockchip/rk3576.dtsi
+@@ -4,6 +4,7 @@
+  */
+ 
+ #include <dt-bindings/clock/rockchip,rk3576-cru.h>
++#include <dt-bindings/gpio/gpio.h>
+ #include <dt-bindings/interrupt-controller/arm-gic.h>
+ #include <dt-bindings/interrupt-controller/irq.h>
+ #include <dt-bindings/phy/phy.h>
+@@ -117,6 +118,13 @@ cpu_l0: cpu@0 {
+ 			dynamic-power-coefficient = <120>;
+ 			cpu-idle-states = <&CPU_SLEEP>;
+ 			#cooling-cells = <2>;
++			i-cache-size = <0x8000>;
++			i-cache-line-size = <64>;
++			i-cache-sets = <256>;
++			d-cache-size = <0x8000>;
++			d-cache-line-size = <64>;
++			d-cache-sets = <128>;
++			next-level-cache = <&l2_cache_l>;
+ 		};
+ 
+ 		cpu_l1: cpu@1 {
+@@ -129,6 +137,13 @@ cpu_l1: cpu@1 {
+ 			operating-points-v2 = <&cluster0_opp_table>;
+ 			cpu-idle-states = <&CPU_SLEEP>;
+ 			#cooling-cells = <2>;
++			i-cache-size = <0x8000>;
++			i-cache-line-size = <64>;
++			i-cache-sets = <256>;
++			d-cache-size = <0x8000>;
++			d-cache-line-size = <64>;
++			d-cache-sets = <128>;
++			next-level-cache = <&l2_cache_l>;
+ 		};
+ 
+ 		cpu_l2: cpu@2 {
+@@ -141,6 +156,13 @@ cpu_l2: cpu@2 {
+ 			operating-points-v2 = <&cluster0_opp_table>;
+ 			cpu-idle-states = <&CPU_SLEEP>;
+ 			#cooling-cells = <2>;
++			i-cache-size = <0x8000>;
++			i-cache-line-size = <64>;
++			i-cache-sets = <256>;
++			d-cache-size = <0x8000>;
++			d-cache-line-size = <64>;
++			d-cache-sets = <128>;
++			next-level-cache = <&l2_cache_l>;
+ 		};
+ 
+ 		cpu_l3: cpu@3 {
+@@ -153,6 +175,13 @@ cpu_l3: cpu@3 {
+ 			operating-points-v2 = <&cluster0_opp_table>;
+ 			cpu-idle-states = <&CPU_SLEEP>;
+ 			#cooling-cells = <2>;
++			i-cache-size = <0x8000>;
++			i-cache-line-size = <64>;
++			i-cache-sets = <256>;
++			d-cache-size = <0x8000>;
++			d-cache-line-size = <64>;
++			d-cache-sets = <128>;
++			next-level-cache = <&l2_cache_l>;
+ 		};
+ 
+ 		cpu_b0: cpu@100 {
+@@ -166,6 +195,13 @@ cpu_b0: cpu@100 {
+ 			dynamic-power-coefficient = <320>;
+ 			cpu-idle-states = <&CPU_SLEEP>;
+ 			#cooling-cells = <2>;
++			i-cache-size = <0xC000>;
++			i-cache-line-size = <64>;
++			i-cache-sets = <256>;
++			d-cache-size = <0x8000>;
++			d-cache-line-size = <64>;
++			d-cache-sets = <256>;
++			next-level-cache = <&l2_cache_b>;
+ 		};
+ 
+ 		cpu_b1: cpu@101 {
+@@ -178,6 +214,13 @@ cpu_b1: cpu@101 {
+ 			operating-points-v2 = <&cluster1_opp_table>;
+ 			cpu-idle-states = <&CPU_SLEEP>;
+ 			#cooling-cells = <2>;
++			i-cache-size = <0xC000>;
++			i-cache-line-size = <64>;
++			i-cache-sets = <256>;
++			d-cache-size = <0x8000>;
++			d-cache-line-size = <64>;
++			d-cache-sets = <256>;
++			next-level-cache = <&l2_cache_b>;
+ 		};
+ 
+ 		cpu_b2: cpu@102 {
+@@ -190,6 +233,13 @@ cpu_b2: cpu@102 {
+ 			operating-points-v2 = <&cluster1_opp_table>;
+ 			cpu-idle-states = <&CPU_SLEEP>;
+ 			#cooling-cells = <2>;
++			i-cache-size = <0xC000>;
++			i-cache-line-size = <64>;
++			i-cache-sets = <256>;
++			d-cache-size = <0x8000>;
++			d-cache-line-size = <64>;
++			d-cache-sets = <256>;
++			next-level-cache = <&l2_cache_b>;
+ 		};
+ 
+ 		cpu_b3: cpu@103 {
+@@ -202,6 +252,31 @@ cpu_b3: cpu@103 {
+ 			operating-points-v2 = <&cluster1_opp_table>;
+ 			cpu-idle-states = <&CPU_SLEEP>;
+ 			#cooling-cells = <2>;
++			i-cache-size = <0xC000>;
++			i-cache-line-size = <64>;
++			i-cache-sets = <256>;
++			d-cache-size = <0x8000>;
++			d-cache-line-size = <64>;
++			d-cache-sets = <256>;
++			next-level-cache = <&l2_cache_b>;
++		};
++
++		l2_cache_l: l2-cache-cluster0 {
++			compatible = "cache";
++			cache-level = <2>;
++			cache-unified;
++			cache-size = <0x80000>;
++			cache-line-size = <64>;
++			cache-sets = <512>;
++		};
++
++		l2_cache_b: l2-cache-cluster1 {
++			compatible = "cache";
++			cache-level = <2>;
++			cache-unified;
++			cache-size = <0x100000>;
++			cache-line-size = <64>;
++			cache-sets = <1024>;
+ 		};
+ 
+ 		idle-states {
+@@ -391,6 +466,17 @@ opp-950000000 {
+ 	display_subsystem: display-subsystem {
+ 		compatible = "rockchip,display-subsystem";
+ 		ports = <&vop_out>;
++
++		route {
++			route_hdmi: route-hdmi {
++				status = "disabled";
++				logo,uboot = "logo.bmp";
++				logo,kernel = "logo_kernel.bmp";
++				logo,mode = "center";
++				charge_logo,mode = "center";
++				connect = <&vp2>;
++			};
++		};
+ 	};
+ 
+ 	firmware {
+@@ -492,6 +578,13 @@ gpio4: gpio@2ae40000 {
+ 		};
+ 	};
+ 
++	mpp_srv: mpp-srv {
++		compatible = "rockchip,mpp-service";
++		rockchip,taskqueue-count = <6>;
++		rockchip,resetgroup-count = <2>;
++		status = "disabled";
++	};
++
+ 	pmu_a53: pmu-a53 {
+ 		compatible = "arm,cortex-a53-pmu";
+ 		interrupts = <GIC_SPI 0 IRQ_TYPE_LEVEL_HIGH>,
+@@ -874,6 +967,16 @@ php_grf: syscon@26020000 {
+ 		pmu0_grf: syscon@26024000 {
+ 			compatible = "rockchip,rk3576-pmu0-grf", "syscon", "simple-mfd";
+ 			reg = <0x0 0x26024000 0x0 0x1000>;
++
++			reboot_mode: reboot-mode {
++				compatible = "syscon-reboot-mode";
++				offset = <0x40>;
++				mode-bootloader = <BOOT_BL_DOWNLOAD>;
++				mode-fastboot = <BOOT_FASTBOOT>;
++				mode-loader = <BOOT_BL_DOWNLOAD>;
++				mode-normal = <BOOT_NORMAL>;
++				mode-recovery = <BOOT_RECOVERY>;
++			};
+ 		};
+ 
+ 		pmu1_grf: syscon@26026000 {
+@@ -979,6 +1082,7 @@ ioc_grf: syscon@26040000 {
+ 		cru: clock-controller@27200000 {
+ 			compatible = "rockchip,rk3576-cru";
+ 			reg = <0x0 0x27200000 0x0 0x50000>;
++			rockchip,grf = <&pmu0_grf>;
+ 			#clock-cells = <1>;
+ 			#reset-cells = <1>;
+ 
+@@ -1277,6 +1381,42 @@ gpu: gpu@27800000 {
+ 			status = "disabled";
+ 		};
+ 
++		vdec: video-codec@27b00000 {
++			compatible = "rockchip,rk3576-vdec";
++			reg = <0x0 0x27b00100 0x0 0x500>,
++			      <0x0 0x27b00000 0x0 0x100>,
++			      <0x0 0x27b00600 0x0 0x100>;
++			reg-names = "function", "link", "cache";
++			interrupts = <GIC_SPI 308 IRQ_TYPE_LEVEL_HIGH>;
++			clocks = <&cru ACLK_RKVDEC_ROOT>, <&cru HCLK_RKVDEC>,
++				 <&cru ACLK_RKVDEC_ROOT_BAK>, <&cru CLK_RKVDEC_CORE>,
++				 <&cru CLK_RKVDEC_HEVC_CA>;
++			clock-names = "axi", "ahb", "cabac", "core", "hevc_cabac";
++			assigned-clocks = <&cru ACLK_RKVDEC_ROOT>, <&cru CLK_RKVDEC_CORE>,
++					  <&cru ACLK_RKVDEC_ROOT_BAK>, <&cru CLK_RKVDEC_HEVC_CA>;
++			assigned-clock-rates = <600000000>, <600000000>,
++					       <500000000>, <1000000000>;
++			iommus = <&vdec_mmu>;
++			power-domains = <&power RK3576_PD_VDEC>;
++			resets = <&cru SRST_A_RKVDEC_BIU>, <&cru SRST_H_RKVDEC_BIU>,
++				 <&cru SRST_H_RKVDEC>, <&cru SRST_RKVDEC_CORE>,
++				 <&cru SRST_RKVDEC_HEVC_CA>;
++			reset-names = "axi", "ahb", "cabac", "core", "hevc_cabac";
++			sram = <&rkvdec_sram>;
++			status = "disabled";
++		};
++
++		vdec_mmu: iommu@27b00800 {
++			compatible = "rockchip,rk3576-iommu", "rockchip,rk3568-iommu";
++			reg = <0x0 0x27b00800 0x0 0x40>, <0x0 0x27b00900 0x0 0x40>;
++			interrupts = <GIC_SPI 309 IRQ_TYPE_LEVEL_HIGH>;
++			clocks = <&cru CLK_RKVDEC_CORE>, <&cru HCLK_RKVDEC>;
++			clock-names = "aclk", "iface";
++			power-domains = <&power RK3576_PD_VDEC>;
++			rockchip,disable-mmu-reset;
++			#iommu-cells = <0>;
++		};
++
+ 		vop: vop@27d00000 {
+ 			compatible = "rockchip,rk3576-vop";
+ 			reg = <0x0 0x27d00000 0x0 0x3000>, <0x0 0x27d05000 0x0 0x1000>;
+@@ -1342,6 +1482,19 @@ vop_mmu: iommu@27d07e00 {
+ 			status = "disabled";
+ 		};
+ 
++		spdif_tx2: spdif-tx@27d20000 {
++			compatible = "rockchip,rk3576-spdif", "rockchip,rk3568-spdif";
++			reg = <0x0 0x27d20000 0x0 0x1000>;
++			interrupts = <GIC_SPI 197 IRQ_TYPE_LEVEL_HIGH>;
++			clocks = <&cru MCLK_SPDIF_TX2>, <&cru HCLK_SPDIF_TX2>;
++			clock-names = "mclk", "hclk";
++			dmas = <&dmac2 28>;
++			dma-names = "tx";
++			power-domains = <&power RK3576_PD_VO0>;
++			#sound-dai-cells = <0>;
++			status = "disabled";
++		};
++
+ 		sai5: sai@27d40000 {
+ 			compatible = "rockchip,rk3576-sai";
+ 			reg = <0x0 0x27d40000 0x0 0x1000>;
+@@ -1446,6 +1599,73 @@ hdmi_out: port@1 {
+ 			};
+ 		};
+ 
++		dp: dp@27e40000 {
++			compatible = "rockchip,rk3576-dp";
++			reg = <0x0 0x27e40000 0x0 0x30000>;
++			interrupts = <GIC_SPI 337 IRQ_TYPE_LEVEL_HIGH>;
++			assigned-clocks = <&cru CLK_AUX16MHZ_0>;
++			assigned-clock-rates = <16000000>;
++			clocks = <&cru PCLK_DP0>, <&cru CLK_AUX16MHZ_0>,
++				 <&cru ACLK_DP0>;
++			clock-names = "apb", "aux", "hdcp";
++			resets = <&cru SRST_DP0>;
++			phys = <&usbdp_phy PHY_TYPE_DP>;
++			power-domains = <&power RK3576_PD_VO1>;
++			status = "disabled";
++
++			ports {
++				#address-cells = <1>;
++				#size-cells = <0>;
++
++				dp0_in: port@0 {
++					reg = <0>;
++				};
++
++				dp0_out: port@1 {
++					reg = <1>;
++				};
++			};
++		};
++
++		spdif_tx3: spdif-tx@27ea0000 {
++			compatible = "rockchip,rk3576-spdif", "rockchip,rk3568-spdif";
++			reg = <0x0 0x27ea0000 0x0 0x1000>;
++			interrupts = <GIC_SPI 198 IRQ_TYPE_LEVEL_HIGH>;
++			clocks = <&cru MCLK_SPDIF_TX3>, <&cru HCLK_SPDIF_TX3>;
++			clock-names = "mclk", "hclk";
++			dmas = <&dmac2 29>;
++			dma-names = "tx";
++			power-domains = <&power RK3576_PD_VO1>;
++			#sound-dai-cells = <0>;
++			status = "disabled";
++		};
++
++		spdif_tx4: spdif-tx@27eb0000 {
++			compatible = "rockchip,rk3576-spdif", "rockchip,rk3568-spdif";
++			reg = <0x0 0x27eb0000 0x0 0x1000>;
++			interrupts = <GIC_SPI 370 IRQ_TYPE_LEVEL_HIGH>;
++			clocks = <&cru MCLK_SPDIF_TX4>, <&cru HCLK_SPDIF_TX4>;
++			clock-names = "mclk", "hclk";
++			dmas = <&dmac1 6>;
++			dma-names = "tx";
++			power-domains = <&power RK3576_PD_VO1>;
++			#sound-dai-cells = <0>;
++			status = "disabled";
++		};
++
++		spdif_tx5: spdif-tx@27ec0000 {
++			compatible = "rockchip,rk3576-spdif", "rockchip,rk3568-spdif";
++			reg = <0x0 0x27ec0000 0x0 0x1000>;
++			interrupts = <GIC_SPI 371 IRQ_TYPE_LEVEL_HIGH>;
++			clocks = <&cru MCLK_SPDIF_TX5>, <&cru HCLK_SPDIF_TX5>;
++			clock-names = "mclk", "hclk";
++			dmas = <&dmac0 25>;
++			dma-names = "tx";
++			power-domains = <&power RK3576_PD_VO1>;
++			#sound-dai-cells = <0>;
++			status = "disabled";
++		};
++
+ 		sai7: sai@27ed0000 {
+ 			compatible = "rockchip,rk3576-sai";
+ 			reg = <0x0 0x27ed0000 0x0 0x1000>;
+@@ -1687,6 +1907,221 @@ qos_npu_m1ro: qos@27f22100 {
+ 			reg = <0x0 0x27f22100 0x0 0x20>;
+ 		};
+ 
++		npu_pvtpll: syscon@27270000 {
++			compatible = "rockchip,rk3576-npu-pvtpll", "syscon";
++			reg = <0x0 0x27270000 0x0 0x1000>;
++		};
++
++		npu_opp_table: npu-opp-table {
++			compatible = "operating-points-v2";
++
++			nvmem-cells = <&npu_leakage>, <&npu_opp_info>,
++					<&specification_serial_number>, <&test_version>;
++			nvmem-cell-names = "leakage", "opp-info",
++					"specification_serial_number", "test_version";
++			rockchip,supported-hw;
++
++			rockchip,pvtm-hw = <0x06>;
++			rockchip,pvtm-voltage-sel-hw = <
++				0	739	0
++				740	759	1
++				760	779	2
++				780	799	3
++				800	819	4
++				820	839	5
++				840	859	6
++				860	879	7
++				880	899	8
++				900	9999	9
++			>;
++			rockchip,pvtm-voltage-sel = <
++				0	719	0
++				720	739	1
++				740	759	2
++				760	779	3
++				780	799	4
++				800	819	5
++				820	839	6
++				840	859	7
++				860	879	8
++				880	899	9
++				900	9999	10
++			>;
++			rockchip,pvtm-low-len-sel = <0>;
++			rockchip,pvtm-pvtpll;
++			rockchip,pvtpll = <&npu_pvtpll>;
++			rockchip,pvtm-offset = <0x54>;
++			rockchip,pvtm-sample-time = <1100>;
++			rockchip,pvtm-freq = <800000>;
++			rockchip,pvtm-volt = <750000>;
++			rockchip,pvtm-ref-temp = <35>;
++			rockchip,pvtm-temp-prop = <0 0>;
++			rockchip,pvtm-thermal-zone = "npu-thermal";
++
++			rockchip,grf = <&npu_grf>;
++			volt-mem-read-margin = <
++				855000	1
++				765000	2
++				675000	3
++				495000	4
++			>;
++			intermediate-threshold-freq = <300000>;
++			rockchip,opp-clocks = <&cru ACLK_RKNN_CBUF>,
++						<&cru HCLK_RKNN_CBUF>,
++						<&cru PCLK_NPUTOP_ROOT>;
++
++			rockchip,temp-hysteresis = <5000>;
++			rockchip,low-temp = <15000>;
++			rockchip,low-temp-min-volt = <750000>;
++			rockchip,init-freq = <950000>;
++
++			opp-300000000 {
++				opp-supported-hw = <0xf9 0xffff>;
++				opp-hz = /bits/ 64 <300000000>;
++				opp-microvolt = <725000 725000 875000>;
++			};
++			opp-400000000 {
++				opp-supported-hw = <0xf9 0xffff>;
++				opp-hz = /bits/ 64 <400000000>;
++				opp-microvolt = <725000 725000 875000>;
++			};
++			/* The Max frequency of RK3576S NPU is 500MHz */
++			opp-s-500000000 {
++				opp-supported-hw = <0x08 0xffff>;
++				opp-hz = /bits/ 64 <500000000>;
++				opp-microvolt = <725000 725000 875000>;
++				opp-microvolt-L0 = <750000 750000 875000>;
++				opp-microvolt-L1 = <737500 737500 875000>;
++				opp-microvolt-L2 = <737500 737500 875000>;
++			};
++			opp-500000000 {
++				opp-supported-hw = <0xf1 0xffff>;
++				opp-hz = /bits/ 64 <500000000>;
++				opp-microvolt = <725000 725000 875000>;
++				opp-microvolt-L0 = <737500 737500 875000>;
++				opp-microvolt-L1 = <737500 737500 875000>;
++			};
++			opp-600000000 {
++				opp-supported-hw = <0xf1 0xffff>;
++				opp-hz = /bits/ 64 <600000000>;
++				opp-microvolt = <725000 725000 875000>;
++				opp-microvolt-L0 = <737500 737500 875000>;
++				opp-microvolt-L1 = <737500 737500 875000>;
++			};
++			opp-700000000 {
++				opp-supported-hw = <0xf1 0xffff>;
++				opp-hz = /bits/ 64 <700000000>;
++				opp-microvolt = <725000 725000 875000>;
++				opp-microvolt-L0 = <775000 775000 875000>;
++				opp-microvolt-L1 = <775000 775000 875000>;
++				opp-microvolt-L2 = <762500 762500 875000>;
++				opp-microvolt-L3 = <762500 762500 875000>;
++				opp-microvolt-L4 = <750000 750000 875000>;
++				opp-microvolt-L5 = <737500 737500 875000>;
++				opp-microvolt-L6 = <725000 725000 875000>;
++			};
++			opp-800000000 {
++				opp-supported-hw = <0xf1 0xffff>;
++				opp-hz = /bits/ 64 <800000000>;
++				opp-microvolt = <800000 800000 875000>;
++				opp-microvolt-L1 = <800000 800000 875000>;
++				opp-microvolt-L2 = <787500 787500 875000>;
++				opp-microvolt-L3 = <775000 775000 875000>;
++				opp-microvolt-L4 = <762500 762500 875000>;
++				opp-microvolt-L5 = <750000 750000 875000>;
++				opp-microvolt-L6 = <737500 737500 875000>;
++				opp-microvolt-L7 = <725000 725000 875000>;
++				opp-microvolt-L8 = <725000 725000 875000>;
++				opp-microvolt-L9 = <725000 725000 875000>;
++				opp-microvolt-L10 = <725000 725000 875000>;
++			};
++			opp-900000000 {
++				opp-supported-hw = <0xf1 0xffff>;
++				opp-hz = /bits/ 64 <900000000>;
++				opp-microvolt = <850000 850000 875000>;
++				opp-microvolt-L1 = <850000 850000 875000>;
++				opp-microvolt-L2 = <837500 837500 875000>;
++				opp-microvolt-L3 = <825000 825000 875000>;
++				opp-microvolt-L4 = <812500 812500 875000>;
++				opp-microvolt-L5 = <800000 800000 875000>;
++				opp-microvolt-L6 = <787500 787500 875000>;
++				opp-microvolt-L7 = <775000 775000 875000>;
++				opp-microvolt-L8 = <762500 762500 875000>;
++				opp-microvolt-L9 = <750000 750000 875000>;
++				opp-microvolt-L10 = <737500 737500 875000>;
++			};
++			opp-950000000 {
++				opp-supported-hw = <0xf1 0xffff>;
++				opp-hz = /bits/ 64 <950000000>;
++				opp-microvolt = <875000 875000 875000>;
++				opp-microvolt-L1 = <875000 875000 875000>;
++				opp-microvolt-L2 = <862500 862500 875000>;
++				opp-microvolt-L3 = <850000 850000 875000>;
++				opp-microvolt-L4 = <837500 837500 875000>;
++				opp-microvolt-L5 = <825000 825000 875000>;
++				opp-microvolt-L6 = <812500 812500 875000>;
++				opp-microvolt-L7 = <800000 800000 875000>;
++				opp-microvolt-L8 = <787500 787500 875000>;
++				opp-microvolt-L9 = <775000 775000 875000>;
++				opp-microvolt-L10 = <762500 762500 875000>;
++			};
++
++			/* RK3576J/M NPU OPPs */
++			opp-j-m-300000000 {
++				opp-supported-hw = <0x06 0xffff>;
++				opp-hz = /bits/ 64 <300000000>;
++				opp-microvolt = <750000 750000 875000>;
++			};
++			opp-j-m-400000000 {
++				opp-supported-hw = <0x06 0xffff>;
++				opp-hz = /bits/ 64 <400000000>;
++				opp-microvolt = <750000 750000 875000>;
++			};
++			opp-j-m-500000000 {
++				opp-supported-hw = <0x06 0xffff>;
++				opp-hz = /bits/ 64 <500000000>;
++				opp-microvolt = <750000 750000 875000>;
++			};
++			opp-j-m-600000000 {
++				opp-supported-hw = <0x06 0xffff>;
++				opp-hz = /bits/ 64 <600000000>;
++				opp-microvolt = <750000 750000 875000>;
++			};
++			opp-j-m-700000000 {
++				opp-supported-hw = <0x06 0xffff>;
++				opp-hz = /bits/ 64 <700000000>;
++				opp-microvolt = <750000 750000 875000>;
++				opp-microvolt-L0 = <787500 787500 875000>;
++				opp-microvolt-L1 = <775000 775000 875000>;
++				opp-microvolt-L2 = <762500 762500 875000>;
++			};
++			npu_opp_j_m_800000000: opp-j-m-800000000 {
++				opp-supported-hw = <0x06 0xffff>;
++				opp-hz = /bits/ 64 <800000000>;
++				opp-microvolt = <750000 750000 875000>;
++				opp-microvolt-L0 = <812500 812500 875000>;
++				opp-microvolt-L1 = <800000 800000 875000>;
++				opp-microvolt-L2 = <787500 787500 875000>;
++				opp-microvolt-L3 = <775000 775000 875000>;
++				opp-microvolt-L4 = <762500 762500 875000>;
++			};
++			npu_opp_j_m_850000000: opp-j-m-850000000 {
++				opp-supported-hw = <0x06 0xffff>;
++				opp-hz = /bits/ 64 <850000000>;
++				opp-microvolt = <837500 837500 875000>;
++				opp-microvolt-L1 = <825000 825000 875000>;
++				opp-microvolt-L2 = <812500 812500 875000>;
++				opp-microvolt-L3 = <800000 800000 875000>;
++				opp-microvolt-L4 = <787500 787500 875000>;
++				opp-microvolt-L5 = <775000 775000 875000>;
++				opp-microvolt-L6 = <762500 762500 875000>;
++				opp-microvolt-L7 = <750000 750000 875000>;
++				opp-microvolt-L8 = <750000 750000 875000>;
++				opp-microvolt-L9 = <750000 750000 875000>;
++			};
++
++		};
++
+ 		rknn_core_0: npu@27700000 {
+ 			compatible = "rockchip,rk3576-rknn-core";
+ 			reg = <0x0 0x27700000 0x0 0x1000>,
+@@ -2000,6 +2435,14 @@ otp_cpu_version: cpu-version@5 {
+ 				reg = <0x05 0x1>;
+ 				bits = <3 3>;
+ 			};
++			test_version: test-version@7 {
++				reg = <0x7 0x1>;
++				bits = <0 4>;
++			};
++			specification_serial_number: specification-serial-number@8 {
++				reg = <0x08 0x1>;
++				bits = <0 5>;
++			};
+ 			otp_id: id@a {
+ 				reg = <0x0a 0x10>;
+ 			};
+@@ -2042,6 +2485,9 @@ soc_tsadc_trim: soc-tsadc-trim@64 {
+ 				reg = <0x64 0x2>;
+ 				bits = <0 10>;
+ 			};
++			npu_opp_info: npu-opp-info@42 {
++				reg = <0x42 0x6>;
++			};
+ 		};
+ 
+ 		sai0: sai@2a600000 {
+@@ -2158,6 +2604,36 @@ &sai4m0_sdi
+ 			status = "disabled";
+ 		};
+ 
++		spdif_tx0: spdif-tx@2a670000 {
++			compatible = "rockchip,rk3576-spdif", "rockchip,rk3568-spdif";
++			reg = <0x0 0x2a670000 0x0 0x1000>;
++			interrupts = <GIC_SPI 195 IRQ_TYPE_LEVEL_HIGH>;
++			clocks = <&cru MCLK_SPDIF_TX0>, <&cru HCLK_SPDIF_TX0>;
++			clock-names = "mclk", "hclk";
++			dmas = <&dmac0 5>;
++			dma-names = "tx";
++			power-domains = <&power RK3576_PD_AUDIO>;
++			pinctrl-names = "default";
++			pinctrl-0 = <&spdifm0_tx0>;
++			#sound-dai-cells = <0>;
++			status = "disabled";
++		};
++
++		spdif_tx1: spdif-tx@2a680000 {
++			compatible = "rockchip,rk3576-spdif", "rockchip,rk3568-spdif";
++			reg = <0x0 0x2a680000 0x0 0x1000>;
++			interrupts = <GIC_SPI 196 IRQ_TYPE_LEVEL_HIGH>;
++			clocks = <&cru MCLK_SPDIF_TX1>, <&cru HCLK_SPDIF_TX1>;
++			clock-names = "mclk", "hclk";
++			dmas = <&dmac1 5>;
++			dma-names = "tx";
++			power-domains = <&power RK3576_PD_AUDIO>;
++			pinctrl-names = "default";
++			pinctrl-0 = <&spdifm0_tx1>;
++			#sound-dai-cells = <0>;
++			status = "disabled";
++		};
++
+ 		gic: interrupt-controller@2a701000 {
+ 			compatible = "arm,gic-400";
+ 			reg = <0x0 0x2a701000 0 0x10000>,
+@@ -2713,6 +3189,16 @@ usbdp_phy: phy@2b010000 {
+ 			rockchip,usbdpphy-grf = <&usbdpphy_grf>;
+ 			rockchip,vo-grf = <&vo1_grf>;
+ 			status = "disabled";
++
++			usbdp_phy_dp: dp-port {
++				 #phy-cells = <0>;
++				 status = "disabled";
++			};
++
++			usbdp_phy_u3: u3-port {
++				 #phy-cells = <0>;
++				 status = "disabled";
++			};
+ 		};
+ 
+ 		hdptxphy: hdmiphy@2b000000 {
+@@ -2746,6 +3232,210 @@ scmi_shmem: scmi-shmem@4010f000 {
+ 			compatible = "arm,scmi-shmem";
+ 			reg = <0x0 0x4010f000 0x0 0x100>;
+ 		};
++
++		iep_mmu: iommu@27960800 {
++			compatible = "rockchip,rk3576-iommu";
++			reg = <0x0 0x27960800 0x0 0x100>;
++			interrupts = <GIC_SPI 333 IRQ_TYPE_LEVEL_HIGH>;
++			interrupt-names = "iep_mmu";
++			clocks = <&cru ACLK_VDPP>, <&cru HCLK_VDPP>;
++			clock-names = "aclk", "iface";
++			#iommu-cells = <0>;
++			rockchip,shootdown-entire;
++			power-domains = <&power RK3576_PD_VPU>;
++			status = "disabled";
++		};
++
++		vdpp: vdpp@27961000 {
++			compatible = "rockchip,vdpp-rk3576";
++			reg = <0x0 0x27961000 0x0 0x500>,  <0x0 0x27962000 0x0 0x900>;
++			reg-names = "vdpp_regs", "zme_regs";
++			interrupts = <GIC_SPI 333 IRQ_TYPE_LEVEL_HIGH>;
++			interrupt-names = "irq_vdpp";
++			clocks = <&cru ACLK_VDPP>, <&cru HCLK_VDPP>, <&cru CLK_CORE_VDPP>;
++			clock-names = "aclk", "hclk", "sclk";
++			rockchip,normal-rates = <600000000>, <0>, <600000000>;
++			assigned-clocks = <&cru ACLK_VDPP>, <&cru CLK_CORE_VDPP>;
++			assigned-clock-rates = <600000000>, <600000000>;
++			resets = <&cru SRST_A_VDPP>, <&cru SRST_H_VDPP>, <&cru SRST_CORE_VDPP>;
++			reset-names = "shared_rst_a", "shared_rst_h", "shared_rst_s";
++			rockchip,skip-pmu-idle-request;
++			rockchip,srv = <&mpp_srv>;
++			rockchip,taskqueue-node = <1>;
++			rockchip,resetgroup-node = <1>;
++			rockchip,disable-auto-freq;
++			iommus = <&iep_mmu>;
++			power-domains = <&power RK3576_PD_VPU>;
++			status = "disabled";
++		};
++
++		pwm1_6ch_0: pwm@2add0000 {
++			compatible = "rockchip,rk3576-pwm";
++			reg = <0x0 0x2add0000 0x0 0x1000>;
++			interrupts = <GIC_SPI 102 IRQ_TYPE_LEVEL_HIGH>;
++			#pwm-cells = <3>;
++			pinctrl-names = "active";
++			pinctrl-0 = <&pwm1m0_ch0>;
++			clocks = <&cru CLK_PWM1>, <&cru PCLK_PWM1>, <&cru CLK_OSC_PWM1>;
++			clock-names = "pwm", "pclk", "osc";
++			status = "disabled";
++		};
++
++		pwm1_6ch_1: pwm@2add1000 {
++			compatible = "rockchip,rk3576-pwm";
++			reg = <0x0 0x2add1000 0x0 0x1000>;
++			interrupts = <GIC_SPI 103 IRQ_TYPE_LEVEL_HIGH>;
++			#pwm-cells = <3>;
++			pinctrl-names = "active";
++			pinctrl-0 = <&pwm1m0_ch1>;
++			clocks = <&cru CLK_PWM1>, <&cru PCLK_PWM1>, <&cru CLK_OSC_PWM1>;
++			clock-names = "pwm", "pclk", "osc";
++			status = "disabled";
++		};
++
++		pwm1_6ch_2: pwm@2add2000 {
++			compatible = "rockchip,rk3576-pwm";
++			reg = <0x0 0x2add2000 0x0 0x1000>;
++			interrupts = <GIC_SPI 104 IRQ_TYPE_LEVEL_HIGH>;
++			#pwm-cells = <3>;
++			pinctrl-names = "active";
++			pinctrl-0 = <&pwm1m0_ch2>;
++			clocks = <&cru CLK_PWM1>, <&cru PCLK_PWM1>, <&cru CLK_OSC_PWM1>;
++			clock-names = "pwm", "pclk", "osc";
++			status = "disabled";
++		};
++
++		pwm1_6ch_3: pwm@2add3000 {
++			compatible = "rockchip,rk3576-pwm";
++			reg = <0x0 0x2add3000 0x0 0x1000>;
++			interrupts = <GIC_SPI 105 IRQ_TYPE_LEVEL_HIGH>;
++			#pwm-cells = <3>;
++			pinctrl-names = "active";
++			pinctrl-0 = <&pwm1m0_ch3>;
++			clocks = <&cru CLK_PWM1>, <&cru PCLK_PWM1>, <&cru CLK_OSC_PWM1>;
++			clock-names = "pwm", "pclk", "osc";
++			status = "disabled";
++		};
++
++		pwm1_6ch_4: pwm@2add4000 {
++			compatible = "rockchip,rk3576-pwm";
++			reg = <0x0 0x2add4000 0x0 0x1000>;
++			interrupts = <GIC_SPI 106 IRQ_TYPE_LEVEL_HIGH>;
++			#pwm-cells = <3>;
++			pinctrl-names = "active";
++			pinctrl-0 = <&pwm1m0_ch4>;
++			clocks = <&cru CLK_PWM1>, <&cru PCLK_PWM1>, <&cru CLK_OSC_PWM1>;
++			clock-names = "pwm", "pclk", "osc";
++			status = "disabled";
++		};
++
++		pwm1_6ch_5: pwm@2add5000 {
++			compatible = "rockchip,rk3576-pwm";
++			reg = <0x0 0x2add5000 0x0 0x1000>;
++			interrupts = <GIC_SPI 107 IRQ_TYPE_LEVEL_HIGH>;
++			#pwm-cells = <3>;
++			pinctrl-names = "active";
++			pinctrl-0 = <&pwm1m0_ch5>;
++			clocks = <&cru CLK_PWM1>, <&cru PCLK_PWM1>, <&cru CLK_OSC_PWM1>;
++			clock-names = "pwm", "pclk", "osc";
++			status = "disabled";
++		};
++
++		pwm2_8ch_0: pwm@2ade0000 {
++			compatible = "rockchip,rk3576-pwm";
++			reg = <0x0 0x2ade0000 0x0 0x1000>;
++			interrupts = <GIC_SPI 108 IRQ_TYPE_LEVEL_HIGH>;
++			#pwm-cells = <3>;
++			pinctrl-names = "active";
++			pinctrl-0 = <&pwm2m0_ch0>;
++			clocks = <&cru CLK_PWM2>, <&cru PCLK_PWM2>;
++			clock-names = "pwm", "pclk";
++			status = "disabled";
++		};
++
++		pwm2_8ch_1: pwm@2ade1000 {
++			compatible = "rockchip,rk3576-pwm";
++			reg = <0x0 0x2ade1000 0x0 0x1000>;
++			interrupts = <GIC_SPI 109 IRQ_TYPE_LEVEL_HIGH>;
++			#pwm-cells = <3>;
++			pinctrl-names = "active";
++			pinctrl-0 = <&pwm2m0_ch1>;
++			clocks = <&cru CLK_PWM2>, <&cru PCLK_PWM2>;
++			clock-names = "pwm", "pclk";
++			status = "disabled";
++		};
++
++		pwm2_8ch_2: pwm@2ade2000 {
++			compatible = "rockchip,rk3576-pwm";
++			reg = <0x0 0x2ade2000 0x0 0x1000>;
++			interrupts = <GIC_SPI 110 IRQ_TYPE_LEVEL_HIGH>;
++			#pwm-cells = <3>;
++			pinctrl-names = "active";
++			pinctrl-0 = <&pwm2m0_ch2>;
++			clocks = <&cru CLK_PWM2>, <&cru PCLK_PWM2>;
++			clock-names = "pwm", "pclk";
++			status = "disabled";
++		};
++
++		pwm2_8ch_3: pwm@2ade3000 {
++			compatible = "rockchip,rk3576-pwm";
++			reg = <0x0 0x2ade3000 0x0 0x1000>;
++			interrupts = <GIC_SPI 111 IRQ_TYPE_LEVEL_HIGH>;
++			#pwm-cells = <3>;
++			pinctrl-names = "active";
++			pinctrl-0 = <&pwm2m0_ch3>;
++			clocks = <&cru CLK_PWM2>, <&cru PCLK_PWM2>;
++			clock-names = "pwm", "pclk";
++			status = "disabled";
++		};
++
++		pwm2_8ch_4: pwm@2ade4000 {
++			compatible = "rockchip,rk3576-pwm";
++			reg = <0x0 0x2ade4000 0x0 0x1000>;
++			interrupts = <GIC_SPI 112 IRQ_TYPE_LEVEL_HIGH>;
++			#pwm-cells = <3>;
++			pinctrl-names = "active";
++			pinctrl-0 = <&pwm2m0_ch4>;
++			clocks = <&cru CLK_PWM2>, <&cru PCLK_PWM2>;
++			clock-names = "pwm", "pclk";
++			status = "disabled";
++		};
++
++		pwm2_8ch_5: pwm@2ade5000 {
++			compatible = "rockchip,rk3576-pwm";
++			reg = <0x0 0x2ade5000 0x0 0x1000>;
++			interrupts = <GIC_SPI 113 IRQ_TYPE_LEVEL_HIGH>;
++			#pwm-cells = <3>;
++			pinctrl-names = "active";
++			pinctrl-0 = <&pwm2m0_ch5>;
++			clocks = <&cru CLK_PWM2>, <&cru PCLK_PWM2>;
++			clock-names = "pwm", "pclk";
++			status = "disabled";
++		};
++
++		pwm2_8ch_6: pwm@2ade6000 {
++			compatible = "rockchip,rk3576-pwm";
++			reg = <0x0 0x2ade6000 0x0 0x1000>;
++			interrupts = <GIC_SPI 114 IRQ_TYPE_LEVEL_HIGH>;
++			#pwm-cells = <3>;
++			pinctrl-names = "active";
++			pinctrl-0 = <&pwm2m0_ch6>;
++			clocks = <&cru CLK_PWM2>, <&cru PCLK_PWM2>;
++			clock-names = "pwm", "pclk";
++			status = "disabled";
++		};
++
++		pwm2_8ch_7: pwm@2ade7000 {
++			compatible = "rockchip,rk3576-pwm";
++			reg = <0x0 0x2ade7000 0x0 0x1000>;
++			interrupts = <GIC_SPI 115 IRQ_TYPE_LEVEL_HIGH>;
++			#pwm-cells = <3>;
++			pinctrl-names = "active";
++			pinctrl-0 = <&pwm2m0_ch7>;
++			clocks = <&cru CLK_PWM2>, <&cru PCLK_PWM2>;
++			clock-names = "pwm", "pclk";
++			status = "disabled";
++		};
+ 	};
+ };
+ 
+-- 
+2.50.1
+

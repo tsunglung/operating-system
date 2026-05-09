@@ -1,0 +1,42 @@
+From 0c5190ed3e8e6286606c66731bcb1ece934734fc Mon Sep 17 00:00:00 2001
+From: Jonas Karlman <jonas@kwiboo.se>
+Date: Tue, 10 Mar 2026 01:02:13 +0000
+Subject: [PATCH] clk: rockchip: rk3576: Add CLK_REF_USB3OTGx support
+
+The CLK_REF_USB3OTGx clocks are used as reference clocks for the two
+DWC3 blocks.
+
+Add simple support to get rate of CLK_REF_USB3OTGx clocks to fix
+reference clock period configuration.
+
+Signed-off-by: Jonas Karlman <jonas@kwiboo.se>
+Reviewed-by: Kever Yang <kever.yang@rock-chips.com>
+---
+ drivers/clk/rockchip/clk_rk3576.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/drivers/clk/rockchip/clk_rk3576.c b/drivers/clk/rockchip/clk_rk3576.c
+index 125b08ee832..59bdfea7425 100644
+--- a/drivers/clk/rockchip/clk_rk3576.c
++++ b/drivers/clk/rockchip/clk_rk3576.c
+@@ -1989,6 +1989,8 @@ static ulong rk3576_clk_get_rate(struct clk *clk)
+ 	case HCLK_SDIO:
+ 		rate = rk3576_mmc_get_clk(priv, clk->id);
+ 		break;
++	case CLK_REF_USB3OTG0:
++	case CLK_REF_USB3OTG1:
+ 	case TCLK_EMMC:
+ 	case TCLK_WDT0:
+ 		rate = OSC_HZ;
+@@ -2153,6 +2155,8 @@ static ulong rk3576_clk_set_rate(struct clk *clk, ulong rate)
+ 	case HCLK_SDIO:
+ 		ret = rk3576_mmc_set_clk(priv, clk->id, rate);
+ 		break;
++	case CLK_REF_USB3OTG0:
++	case CLK_REF_USB3OTG1:
+ 	case TCLK_EMMC:
+ 	case TCLK_WDT0:
+ 		ret = OSC_HZ;
+-- 
+GitLab
+

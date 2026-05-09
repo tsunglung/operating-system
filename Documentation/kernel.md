@@ -17,6 +17,7 @@ The following boards are using [mainline Linux kernel](https://git.kernel.org/pu
 | ODROID-M1S | 6.18.46 |
 | ODROID-N2 | 6.18.46 |
 | Open Virtual Appliance | 6.18.46 |
+| FireFly AiBOX-3576 | 6.18.46 |
 
 ## Raspberry Pi Linux
 

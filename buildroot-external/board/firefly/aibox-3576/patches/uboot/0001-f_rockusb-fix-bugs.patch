@@ -1,0 +1,475 @@
+From db1698213b536e044498fc3e5f5af641fb28bd61 Mon Sep 17 00:00:00 2001
+From: Tsunglung Yang <zonglong@gmail.com>
+Date: Fri, 8 May 2026 18:20:34 +0800
+Subject: [PATCH] f_rockusb: fix bugs
+
+---
+ .../arm/include/asm/arch-rockchip/f_rockusb.h |  39 +++
+ drivers/usb/dwc3/gadget.c                     |   3 +
+ drivers/usb/gadget/f_rockusb.c                | 306 +++++++++++++++++-
+ 3 files changed, 339 insertions(+), 9 deletions(-)
+ 
+diff --git a/arch/arm/include/asm/arch-rockchip/f_rockusb.h b/arch/arm/include/asm/arch-rockchip/f_rockusb.h
+index 9abb3b16..08b7afaf 100644
+--- a/arch/arm/include/asm/arch-rockchip/f_rockusb.h
++++ b/arch/arm/include/asm/arch-rockchip/f_rockusb.h
+@@ -64,8 +64,16 @@ K_FW_SET_RESET_FLAG = 0x1E,
+ K_FW_SPI_READ_10 = 0x21,
+ K_FW_SPI_WRITE_10 = 0x22,
+ K_FW_LBA_ERASE_10 = 0x25,
++K_FW_VS_WRITE = 0x26,
++K_FW_VS_READ = 0x27,
++K_FW_UART_READ = 0x28,
++K_FW_SWITCH_STORAGE	= 0x2A,
++K_FW_GET_STORAGE_MEDIA = 0x2B,
++K_FW_READ_OTP_DATA	= 0x2C,
+ 
+ K_FW_SESSION = 0x30,
++K_FW_READ_CAPABILITY = 0xAA,
++K_FW_SWITCH_USB3 = 0xBB,
+ K_FW_RESET = 0xff,
+ };
+ 
+@@ -130,6 +138,37 @@ struct f_rockusb {
+ 	void *buf_head;
+ };
+ 
++#define ROCKCHIP_FLASH_BLOCK_SIZE	1024
++#define ROCKCHIP_FLASH_PAGE_SIZE	4
++
++struct rk_flash_info {
++	u32	flash_size;
++	u16	block_size;
++	u8	page_size;
++	u8	ecc_bits;
++	u8	access_time;
++	u8	manufacturer;
++	u8	flash_mask;
++	u8	reserved1;
++	u32	reserved2;
++};
++
++/* tag_bootdev.devtype */
++#define BOOT_TYPE_UNKNOWN	0
++#define BOOT_TYPE_NAND		(1 << 0)
++#define BOOT_TYPE_EMMC		(1 << 1)
++#define BOOT_TYPE_SD0		(1 << 2)
++#define BOOT_TYPE_SD1		(1 << 3)
++#define BOOT_TYPE_SPI_NOR	(1 << 4)
++#define BOOT_TYPE_SPI_NAND	(1 << 5)
++#define BOOT_TYPE_RAM		(1 << 6)
++#define BOOT_TYPE_UMS		(1 << 7)
++#define BOOT_TYPE_MTD_BLK_SPI_NAND	(1 << 8)
++#define BOOT_TYPE_MTD_BLK_SPI_NOR	(1 << 9)
++#define BOOT_TYPE_SATA		(1 << 10)
++#define BOOT_TYPE_PCIE		(1 << 11)
++#define BOOT_TYPE_UFS		(1 << 12)
++
+ /* init rockusb device, tell rockusb which device you want to read/write*/
+ void rockusb_dev_init(char *dev_type, int dev_index);
+ #endif /* _F_ROCKUSB_H_ */
+diff --git a/drivers/usb/dwc3/gadget.c b/drivers/usb/dwc3/gadget.c
+index 24ae0c23..730f116d 100644
+--- a/drivers/usb/dwc3/gadget.c
++++ b/drivers/usb/dwc3/gadget.c
+@@ -1153,6 +1153,9 @@ static int dwc3_gadget_ep_dequeue(struct usb_ep *ep,
+ 
+ 	spin_lock_irqsave(&dwc->lock, flags);
+ 
++	if (list_empty(&dep->request_list) && list_empty(&dep->req_queued))
++		goto out0;
++
+ 	list_for_each_entry(r, &dep->request_list, list) {
+ 		if (r == req)
+ 			break;
+diff --git a/drivers/usb/gadget/f_rockusb.c b/drivers/usb/gadget/f_rockusb.c
+index d679cdae..d359ffad
+--- a/drivers/usb/gadget/f_rockusb.c
++++ b/drivers/usb/gadget/f_rockusb.c
+@@ -4,6 +4,7 @@
+  *
+  * Eddie Cai <eddie.cai.linux@gmail.com>
+  */
++#include <asm/io.h>
+ #include <command.h>
+ #include <config.h>
+ #include <env.h>
+@@ -18,6 +19,7 @@
+ #include <linux/compiler.h>
+ #include <g_dnl.h>
+ #include <asm/arch-rockchip/f_rockusb.h>
++#include <asm/arch-rockchip/chip_info.h>
+ 
+ static inline struct f_rockusb *func_to_rockusb(struct usb_function *f)
+ {
+@@ -563,7 +565,7 @@ static void cb_read_storage_id(struct usb_ep *ep, struct usb_request *req)
+ 	struct f_rockusb *f_rkusb = get_rkusb();
+ 	char emmc_id[] = "EMMC ";
+ 
+-	printf("read storage id\n");
++	debug("read storage id\n");
+ 	memcpy((char *)cbw, req->buf, USB_BULK_CB_WRAP_LEN);
+ 
+ 	/* Prepare for sending subsequent CSW_GOOD */
+@@ -573,9 +575,9 @@ static void cb_read_storage_id(struct usb_ep *ep, struct usb_request *req)
+ 	rockusb_tx_write_str(emmc_id);
+ }
+ 
+-int __weak rk_get_bootrom_chip_version(unsigned int *chip_info, int size)
++int rk_get_bootrom_chip_version(unsigned int *chip_info, int size)
+ {
+-	return 0;
++	return rockchip_rockusb_get_chip_info(chip_info);
+ }
+ 
+ static void cb_get_chip_version(struct usb_ep *ep, struct usb_request *req)
+@@ -597,15 +599,15 @@ static void cb_get_chip_version(struct usb_ep *ep, struct usb_request *req)
+ 	 * Note that memory version do invert MSB/LSB so printing the char
+ 	 * buffer will show: A02341023180002V
+ 	 */
+-	printf("read chip version: ");
++	debug("read chip version: ");
+ 	for (i = 0; i < 4; i++) {
+-		printf("%c%c%c%c",
++		debug("%c%c%c%c",
+ 		       (chip_info[i] >> 24) & 0xFF,
+ 		       (chip_info[i] >> 16) & 0xFF,
+ 		       (chip_info[i] >>  8) & 0xFF,
+ 		       (chip_info[i] >>  0) & 0xFF);
+ 	}
+-	printf("\n");
++	debug("\n");
+ 	memcpy((char *)cbw, req->buf, USB_BULK_CB_WRAP_LEN);
+ 
+ 	/* Prepare for sending subsequent CSW_GOOD */
+@@ -742,11 +744,265 @@ static void cb_erase_lba(struct usb_ep *ep, struct usb_request *req)
+ 			     USB_BULK_CS_WRAP_LEN);
+ }
+ 
++static void cb_switch_storage(struct usb_ep *ep, struct usb_request *req)
++{
++	ALLOC_CACHE_ALIGN_BUFFER(struct fsg_bulk_cb_wrap, cbw,
++				 sizeof(struct fsg_bulk_cb_wrap));
++	struct f_rockusb *f_rkusb = get_rkusb();
++	u32 media = BOOT_TYPE_UNKNOWN;
++
++	memcpy((char *)cbw, req->buf, USB_BULK_CB_WRAP_LEN);
++	media = 1 << cbw->CDB[1];
++
++	if (!f_rkusb->desc) {
++
++		switch (media) {
++#ifdef CONFIG_MMC
++			case BOOT_TYPE_EMMC:
++				strcpy(f_rkusb->dev_type, "mmc");
++				break;
++#endif
++#ifdef CONFIG_SPI_FLASH
++			case BOOT_TYPE_MTD_BLK_SPI_NOR:
++				strcpy(f_rkusb->dev_type, "sf");
++				f_rkusb->dev_index = 0;
++				break;
++#endif
++#ifdef CONFIG_NVME
++			case BOOT_TYPE_PCIE:
++				strcpy(f_rkusb->dev_type, "nvme");
++				f_rkusb->dev_index = 0;
++				run_command("pci enum", 0);
++				run_command("sleep 1", 0);
++				run_command("nvme scan", 0);
++				break;
++#endif
++#ifdef CONFIG_UFS
++			case BOOT_TYPE_UFS:
++				strcpy(f_rkusb->dev_type, "ufs");
++				f_rkusb->dev_index = 0;
++				break;
++#endif
++#ifdef CONFIG_USB_STORAGE
++			case BOOT_TYPE_UMS:
++				strcpy(f_rkusb->dev_type, "usb");
++				f_rkusb->dev_index = 0;
++				break;
++#endif
++		}
++	}
++
++	rockusb_tx_write_csw(cbw->tag, cbw->data_transfer_length,
++			     CSW_GOOD, USB_BULK_CS_WRAP_LEN);
++}
++
++static void cb_get_storage_media(struct usb_ep *ep, struct usb_request *req)
++{
++	ALLOC_CACHE_ALIGN_BUFFER(struct fsg_bulk_cb_wrap, cbw,
++				 sizeof(struct fsg_bulk_cb_wrap));
++	struct f_rockusb *f_rkusb = get_rkusb();
++	u32 media = BOOT_TYPE_UNKNOWN;
++	u8 buf[4];
++
++	if (!f_rkusb->desc) {
++		char *type = f_rkusb->dev_type;
++#ifdef CONFIG_MMC
++		if (strcmp(type, "mmc") == 0)
++			media = BOOT_TYPE_EMMC;
++#endif
++#ifdef CONFIG_SPI_FLASH
++		if (strcmp(type, "sf") == 0)
++			media = BOOT_TYPE_MTD_BLK_SPI_NOR;
++#endif
++#ifdef CONFIG_NVME
++		if (strcmp(type, "nvme") == 0)
++			media = BOOT_TYPE_PCIE;
++#endif
++#ifdef CONFIG_UFS
++		if (strcmp(type, "ufs") == 0)
++			media = BOOT_TYPE_UFS;
++#endif
++#ifdef CONFIG_USB_STORAGE
++		if (strcmp(type, "usb") == 0)
++			media = BOOT_TYPE_UMS;
++#endif
++		}
++	memcpy(buf, &media, sizeof(buf));
++
++	memcpy((char *)cbw, req->buf, USB_BULK_CB_WRAP_LEN);
++
++	/* Prepare for sending subsequent CSW_GOOD */
++	f_rkusb->tag = cbw->tag;
++	f_rkusb->in_req->complete = tx_handler_send_csw;
++
++	rockusb_tx_write((char *)buf, sizeof(media));
++}
++
++static void cb_read_capability(struct usb_ep *ep, struct usb_request *req)
++{
++	ALLOC_CACHE_ALIGN_BUFFER(struct fsg_bulk_cb_wrap, cbw,
++				 sizeof(struct fsg_bulk_cb_wrap));
++	struct f_rockusb *f_rkusb = get_rkusb();
++	u32 len = 8;
++	u8 capability_info[len];
++	memset(capability_info, 0x0, sizeof(capability_info));
++
++	/*
++	 * bit[0]: Direct LBA, 0: Disabled;
++	 * bit[1]: Vendor Storage API, 0: Disabed (default);
++	 * bit[2]: First 4M Access, 0: Disabled;
++	 * bit[3]: Read LBA On, 0: Disabed (default);
++	 * bit[4]: New Vendor Storage API, 0: Disabed;
++	 * bit[5]: Read uart data from ram
++	 * bit[6]: Read IDB config
++	 * bit[7]: Read SecureMode
++	 * bit[8]: New IDB feature
++	 * bit[9]: Get storage media info
++	 * bit[10]: LBAwrite Parity
++	 * bit[11]: Read Otp Data
++	 * bit[12]: usb3 download
++	 * bit[13]: Write OTP proof
++	 * bit[14]: Write Cipher Key
++	 * bit[15:63}: Reserved.
++	 */
++
++	capability_info[0] = BIT(0) | BIT(2) | BIT(4);
++
++#ifdef CONFIG_PSTORE
++	capability_info[0] |= (1 << 5);
++#endif
++
++	capability_info[1] = BIT(0);  /* new idb */
++	capability_info[1] |= BIT(1); /* Switch Storage */
++	capability_info[1] |= BIT(2); /* LBAwrite Parity */
++
++	capability_info[1] &= ~BIT(4);
++
++#ifdef CONFIG_ROCKCHIP_OTP
++	capability_info[1] |= BIT(3); /* Read Otp Data */
++	capability_info[1] |= BIT(5); /* Write OTP proof */
++	capability_info[1] |= BIT(6); /* Write Cipher Key */
++#endif
++
++	memcpy((char *)cbw, req->buf, USB_BULK_CB_WRAP_LEN);
++
++	/* Prepare for sending subsequent CSW_GOOD */
++	f_rkusb->tag = cbw->tag;
++	f_rkusb->in_req->complete = tx_handler_send_csw;
++
++	rockusb_tx_write((char *)capability_info, len);
++}
++
++static void cb_read_flash_info(struct usb_ep *ep, struct usb_request *req)
++{
++	ALLOC_CACHE_ALIGN_BUFFER(struct fsg_bulk_cb_wrap, cbw,
++				 sizeof(struct fsg_bulk_cb_wrap));
++	struct f_rockusb *f_rkusb = get_rkusb();
++
++	u32 len = sizeof(struct rk_flash_info);
++
++	ALLOC_CACHE_ALIGN_BUFFER(struct rk_flash_info, finfo, len);
++	finfo->block_size = ROCKCHIP_FLASH_BLOCK_SIZE;
++	finfo->page_size = ROCKCHIP_FLASH_PAGE_SIZE;
++	finfo->access_time = 40;
++
++	char *type = f_rkusb->dev_type;
++	u8 flash_info[len];
++
++	if (strcmp(type, "nvme") == 0) {
++		run_command("pci enum", 0);
++		run_command("sleep 1", 0);
++		run_command("nvme scan", 0);
++	}
++
++	if (strcmp(type, "sf") == 0) {
++		run_command("sf probe", 0);
++	}
++
++#ifdef CONFIG_USB_STORAGE
++	if (strcmp(type, "usb") == 0) {
++		run_command("usb stop", 0);
++		run_command("sleep 1", 0);
++		run_command("usb start", 0);
++	}
++#endif
++
++	if (!f_rkusb->desc) {
++		int index = f_rkusb->dev_index;
++
++		f_rkusb->desc = blk_get_dev(type, index);
++		if (!f_rkusb->desc ||
++			f_rkusb->desc->type == DEV_TYPE_UNKNOWN) {
++				printf("invalid device \"%s\", %d\n", type, index);
++				rockusb_tx_write_csw(f_rkusb->tag, 0, CSW_FAIL,
++							USB_BULK_CS_WRAP_LEN);
++				return;
++		}
++	}
++
++	finfo->flash_size = (u32)f_rkusb->desc->lba;
++
++	debug("Flash info: block_size = %x page_size = %x flash_size = %x\n", finfo->block_size, finfo->page_size, finfo->flash_size);
++
++	if (finfo->flash_size)
++		finfo->flash_mask = 1;
++
++	memset((void *)flash_info, 0xff, len);
++	memcpy((void *)flash_info, (void *)finfo, len);
++
++	memcpy((char *)cbw, req->buf, USB_BULK_CB_WRAP_LEN);
++
++	/* Prepare for sending subsequent CSW_GOOD */
++	f_rkusb->tag = cbw->tag;
++	f_rkusb->in_req->complete = tx_handler_send_csw;
++
++	rockusb_tx_write((char *)flash_info, len);
++}
++
++static void cb_test_bad_block(struct usb_ep *ep, struct usb_request *req)
++{
++	ALLOC_CACHE_ALIGN_BUFFER(struct fsg_bulk_cb_wrap, cbw,
++				 sizeof(struct fsg_bulk_cb_wrap));
++	struct f_rockusb *f_rkusb = get_rkusb();
++	u32 len = 64;
++	u8 buf[len];
++	memset(buf, 0, len);
++
++	memcpy((char *)cbw, req->buf, USB_BULK_CB_WRAP_LEN);
++
++	/* Prepare for sending subsequent CSW_GOOD */
++	f_rkusb->tag = cbw->tag;
++	f_rkusb->in_req->complete = tx_handler_send_csw;
++
++	rockusb_tx_write(buf, len);
++}
++
++/* high 24 bits is tag, low 8 bits is type */
++#define REBOOT_FLAG		0x5242C300
++/* cold boot */
++#define BOOT_COLD		0
++/* normal boot */
++#define BOOT_NORMAL		(REBOOT_FLAG + 0)
++/* enter loader rockusb mode */
++#define BOOT_LOADER		(REBOOT_FLAG + 1)
++/* enter bootrom download mode */
++#define BOOT_BROM_DOWNLOAD	0xEF08A53C
++
+ void __weak rkusb_set_reboot_flag(int flag)
+ {
+ 	struct f_rockusb *f_rkusb = get_rkusb();
+ 
+-	printf("rockkusb set reboot flag: %d\n", f_rkusb->reboot_flag);
++	u32 boot_flag = BOOT_NORMAL;
++
++	if (f_rkusb->reboot_flag == 0x03)
++		boot_flag = BOOT_BROM_DOWNLOAD;
++	else if (f_rkusb->reboot_flag == 0x06)
++		boot_flag = BOOT_LOADER;
++
++	f_rkusb->reboot_flag = 0; /* restore to default */
++	writel(boot_flag, (void *)CONFIG_ROCKCHIP_BOOT_MODE_REG);
++
++	debug("rockkusb set reboot flag: %d\n", f_rkusb->reboot_flag);
+ }
+ 
+ static void compl_do_reset(struct usb_ep *ep, struct usb_request *req)
+@@ -795,7 +1048,7 @@ static const struct cmd_dispatch_info cmd_dispatch_info[] = {
+ 	},
+ 	{
+ 		.cmd = K_FW_TEST_BAD_BLOCK,
+-		.cb = cb_not_support,
++		.cb = cb_test_bad_block,
+ 	},
+ 	{
+ 		.cmd = K_FW_READ_10,
+@@ -851,7 +1104,7 @@ static const struct cmd_dispatch_info cmd_dispatch_info[] = {
+ 	},
+ 	{
+ 		.cmd = K_FW_READ_FLASH_INFO,
+-		.cb = cb_not_support,
++		.cb = cb_read_flash_info,
+ 	},
+ 	{
+ 		.cmd = K_FW_GET_CHIP_VER,
+@@ -877,10 +1130,42 @@ static const struct cmd_dispatch_info cmd_dispatch_info[] = {
+ 		.cmd = K_FW_LBA_ERASE_10,
+ 		.cb = cb_erase_lba,
+ 	},
++	{
++		.cmd = K_FW_VS_WRITE,
++		.cb = cb_not_support,
++	},
++	{
++		.cmd = K_FW_VS_READ,
++		.cb = cb_not_support,
++	},
++	{
++		.cmd = K_FW_UART_READ,
++		.cb = cb_not_support,
++	},
++	{
++		.cmd = K_FW_SWITCH_STORAGE,
++		.cb = cb_switch_storage,
++	},
++	{
++		.cmd = K_FW_GET_STORAGE_MEDIA,
++		.cb = cb_get_storage_media,
++	},
++	{
++		.cmd = K_FW_READ_OTP_DATA,
++		.cb = cb_not_support,
++	},
+ 	{
+ 		.cmd = K_FW_SESSION,
+ 		.cb = cb_not_support,
+ 	},
++	{
++		.cmd = K_FW_READ_CAPABILITY,
++		.cb = cb_read_capability,
++	},
++	{
++		.cmd = K_FW_SWITCH_USB3,
++		.cb = cb_not_support,
++	},
+ 	{
+ 		.cmd = K_FW_RESET,
+ 		.cb = cb_reboot,
+-- 
+2.50.1
+

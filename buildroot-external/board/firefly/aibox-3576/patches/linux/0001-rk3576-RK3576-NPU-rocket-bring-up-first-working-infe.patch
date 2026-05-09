@@ -1,0 +1,526 @@
+From e3c3f36ced7ca485a10c74d6d847340406abe1de Mon Sep 17 00:00:00 2001
+From: gahingwoo <huhuvmb88@outlook.com>
+Date: Tue, 9 Jun 2026 18:15:04 +1200
+Subject: [PATCH 1/7] =?UTF-8?q?rk3576:=20RK3576=20NPU=20(rocket)=20bring-u?=
+ =?UTF-8?q?p=20=E2=80=94=20first=20working=20inference?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Add support for the RK3576 NPU (RKNN) via the rocket DRM accelerator
+driver and Mesa Teflon TFLite delegate.  Tested on Radxa ROCK 4D with
+MobileNetV1 1.0/224 quantised:
+
+  First-compile: ~50 ms   Steady-state: ~51 ms avg
+
+Driver changes
+--------------
+rocket_drv.c: add "rk3576-rknn-core" to compatible match table
+rocket_device.c: add for_each_compatible_node loop for rk3576-rknn-core
+rocket_core.c/.h: add named clock IDs (aclk/hclk/npu/pclk); required
+  because the RK3576 DT binding uses clock-names and devm_clk_bulk_get()
+  needs the IDs set before the lookup
+rocket_job.c:
+  - rocket_job_timedout(): guard MMIO reads behind pm_runtime_active()
+    to avoid faults when the job timer fires after runtime suspend
+  - Add hrtimer-based completion polling for RK3576: OP_EN never clears
+    on this SoC (unlike RK3588), so poll INTERRUPT_RAW_STATUS bits 28-29
+    (PC_DONE_0/PC_DONE_1) instead; bits are read-only in INTERRUPT_MASK
+    so they cannot be routed to the GIC
+
+DT / binding changes
+--------------------
+rk3576.dtsi: add rknn_core_0/1, rknn_mmu_0/1 nodes with confirmed
+  register addresses, IRQs (GIC_SPI 247/248), clocks, and resets
+rk3576-rock-4d.dts: enable rknn_core_0/rknn_mmu_0; add npu-supply and
+  regulator-always-on on vdd_npu_s0
+rockchip,rk3588-rknn-core.yaml: make sram-supply optional (absent on
+  RK3576)
+
+Signed-off-by: Jiaxing Hu <huhuvmb88@gmail.com>
+---
+ .../npu/rockchip,rk3588-rknn-core.yaml        |   2 +-
+ .../boot/dts/rockchip/rk3576-rock-4d.dts      |  10 +
+ arch/arm64/boot/dts/rockchip/rk3576.dtsi      |  58 ++++++
+ drivers/accel/rocket/rocket_core.c            |   4 +
+ drivers/accel/rocket/rocket_core.h            |  10 +
+ drivers/accel/rocket/rocket_device.c          |   4 +
+ drivers/accel/rocket/rocket_drv.c             |   1 +
+ drivers/accel/rocket/rocket_job.c             | 174 ++++++++++++++----
+ 8 files changed, 225 insertions(+), 38 deletions(-)
+
+diff --git a/Documentation/devicetree/bindings/npu/rockchip,rk3588-rknn-core.yaml b/Documentation/devicetree/bindings/npu/rockchip,rk3588-rknn-core.yaml
+index caca2a490..d904db3bf 100644
+--- a/Documentation/devicetree/bindings/npu/rockchip,rk3588-rknn-core.yaml
++++ b/Documentation/devicetree/bindings/npu/rockchip,rk3588-rknn-core.yaml
+@@ -21,6 +21,7 @@ properties:
+ 
+   compatible:
+     enum:
++      - rockchip,rk3576-rknn-core
+       - rockchip,rk3588-rknn-core
+ 
+   reg:
+@@ -75,7 +76,6 @@ required:
+   - resets
+   - reset-names
+   - npu-supply
+-  - sram-supply
+ 
+ additionalProperties: false
+ 
+diff --git a/arch/arm64/boot/dts/rockchip/rk3576-rock-4d.dts b/arch/arm64/boot/dts/rockchip/rk3576-rock-4d.dts
+index 9bc33422c..925440d73 100644
+--- a/arch/arm64/boot/dts/rockchip/rk3576-rock-4d.dts
++++ b/arch/arm64/boot/dts/rockchip/rk3576-rock-4d.dts
+@@ -439,6 +439,7 @@ regulator-state-mem {
+ 			};
+ 
+ 			vdd_npu_s0: dcdc-reg2 {
++				regulator-always-on;
+ 				regulator-boot-on;
+ 				regulator-enable-ramp-delay = <400>;
+ 				regulator-min-microvolt = <550000>;
+@@ -845,3 +846,12 @@ vp0_out_hdmi: endpoint@ROCKCHIP_VOP2_EP_HDMI0 {
+ 		remote-endpoint = <&hdmi_in_vp0>;
+ 	};
+ };
++
++&rknn_core_0 {
++	npu-supply = <&vdd_npu_s0>;
++	status = "okay";
++};
++
++&rknn_mmu_0 {
++	status = "okay";
++};
+diff --git a/arch/arm64/boot/dts/rockchip/rk3576.dtsi b/arch/arm64/boot/dts/rockchip/rk3576.dtsi
+index 5d69a81ae..671241b20 100644
+--- a/arch/arm64/boot/dts/rockchip/rk3576.dtsi
++++ b/arch/arm64/boot/dts/rockchip/rk3576.dtsi
+@@ -1687,6 +1687,64 @@ qos_npu_m1ro: qos@27f22100 {
+ 			reg = <0x0 0x27f22100 0x0 0x20>;
+ 		};
+ 
++		rknn_core_0: npu@27700000 {
++			compatible = "rockchip,rk3576-rknn-core";
++			reg = <0x0 0x27700000 0x0 0x1000>,
++			      <0x0 0x27701000 0x0 0x1000>,
++			      <0x0 0x27703000 0x0 0x1000>;
++			reg-names = "pc", "cna", "core";
++			interrupts = <GIC_SPI 247 IRQ_TYPE_LEVEL_HIGH>;
++			clocks = <&cru ACLK_RKNN0>, <&cru HCLK_RKNN_ROOT>,
++				 <&cru CLK_RKNN_DSU0>, <&cru PCLK_NPUTOP_ROOT>;
++			clock-names = "aclk", "hclk", "npu", "pclk";
++			resets = <&cru SRST_A_RKNN0>, <&cru SRST_A_RKNN0_BIU>;
++			reset-names = "srst_a", "srst_h";
++			power-domains = <&power RK3576_PD_NPU0>;
++			iommus = <&rknn_mmu_0>;
++			status = "disabled";
++		};
++
++		rknn_mmu_0: iommu@27702000 {
++			compatible = "rockchip,rk3576-iommu", "rockchip,rk3568-iommu";
++			reg = <0x0 0x27702000 0x0 0x100>,
++			      <0x0 0x27702100 0x0 0x100>;
++			interrupts = <GIC_SPI 247 IRQ_TYPE_LEVEL_HIGH>;
++			clocks = <&cru ACLK_RKNN0>, <&cru HCLK_RKNN_ROOT>;
++			clock-names = "aclk", "iface";
++			#iommu-cells = <0>;
++			power-domains = <&power RK3576_PD_NPU0>;
++			status = "disabled";
++		};
++
++		rknn_core_1: npu@27710000 {
++			compatible = "rockchip,rk3576-rknn-core";
++			reg = <0x0 0x27710000 0x0 0x1000>,
++			      <0x0 0x27711000 0x0 0x1000>,
++			      <0x0 0x27713000 0x0 0x1000>;
++			reg-names = "pc", "cna", "core";
++			interrupts = <GIC_SPI 248 IRQ_TYPE_LEVEL_HIGH>;
++			clocks = <&cru ACLK_RKNN1>, <&cru HCLK_RKNN_ROOT>,
++				 <&cru CLK_RKNN_DSU0>, <&cru PCLK_NPUTOP_ROOT>;
++			clock-names = "aclk", "hclk", "npu", "pclk";
++			resets = <&cru SRST_A_RKNN1>, <&cru SRST_A_RKNN1_BIU>;
++			reset-names = "srst_a", "srst_h";
++			power-domains = <&power RK3576_PD_NPU1>;
++			iommus = <&rknn_mmu_1>;
++			status = "disabled";
++		};
++
++		rknn_mmu_1: iommu@2770a000 {
++			compatible = "rockchip,rk3576-iommu", "rockchip,rk3568-iommu";
++			reg = <0x0 0x2770a000 0x0 0x100>,
++			      <0x0 0x2770a100 0x0 0x100>;
++			interrupts = <GIC_SPI 248 IRQ_TYPE_LEVEL_HIGH>;
++			clocks = <&cru ACLK_RKNN1>, <&cru HCLK_RKNN_ROOT>;
++			clock-names = "aclk", "iface";
++			#iommu-cells = <0>;
++			power-domains = <&power RK3576_PD_NPU1>;
++			status = "disabled";
++		};
++
+ 		gmac0: ethernet@2a220000 {
+ 			compatible = "rockchip,rk3576-gmac", "snps,dwmac-4.20a";
+ 			reg = <0x0 0x2a220000 0x0 0x10000>;
+diff --git a/drivers/accel/rocket/rocket_core.c b/drivers/accel/rocket/rocket_core.c
+index b3b2fa9ba..5dd260bac 100644
+--- a/drivers/accel/rocket/rocket_core.c
++++ b/drivers/accel/rocket/rocket_core.c
+@@ -28,6 +28,10 @@ int rocket_core_init(struct rocket_core *core)
+ 	if (err)
+ 		return dev_err_probe(dev, err, "failed to get resets for core %d\n", core->index);
+ 
++	core->clks[0].id = "aclk";
++	core->clks[1].id = "hclk";
++	core->clks[2].id = "npu";
++	core->clks[3].id = "pclk";
+ 	err = devm_clk_bulk_get(dev, ARRAY_SIZE(core->clks), core->clks);
+ 	if (err)
+ 		return dev_err_probe(dev, err, "failed to get clocks for core %d\n", core->index);
+diff --git a/drivers/accel/rocket/rocket_core.h b/drivers/accel/rocket/rocket_core.h
+index f6d738285..a3fa64067 100644
+--- a/drivers/accel/rocket/rocket_core.h
++++ b/drivers/accel/rocket/rocket_core.h
+@@ -6,6 +6,7 @@
+ 
+ #include <drm/gpu_scheduler.h>
+ #include <linux/clk.h>
++#include <linux/hrtimer.h>
+ #include <linux/io.h>
+ #include <linux/mutex_types.h>
+ #include <linux/reset.h>
+@@ -52,6 +53,15 @@ struct rocket_core {
+ 		atomic_t pending;
+ 	} reset;
+ 
++	/*
++	 * RK3576 completion polling: INTERRUPT_MASK bits 28-29 (PC_DONE_0/1)
++	 * are read-only so the completion signal cannot be routed to the GIC.
++	 * We poll OPERATION_ENABLE every 1 ms via hrtimer instead.
++	 */
++	struct hrtimer poll_timer;
++	struct work_struct poll_work;
++	atomic_t poll_active;
++
+ 	struct drm_gpu_scheduler sched;
+ 	u64 fence_context;
+ 	u64 emit_seqno;
+diff --git a/drivers/accel/rocket/rocket_device.c b/drivers/accel/rocket/rocket_device.c
+index 46e6ee1e7..bfb00f967 100644
+--- a/drivers/accel/rocket/rocket_device.c
++++ b/drivers/accel/rocket/rocket_device.c
+@@ -31,6 +31,10 @@ struct rocket_device *rocket_device_init(struct platform_device *pdev,
+ 		if (of_device_is_available(core_node))
+ 			num_cores++;
+ 
++	for_each_compatible_node(core_node, NULL, "rockchip,rk3576-rknn-core")
++		if (of_device_is_available(core_node))
++			num_cores++;
++
+ 	rdev->cores = devm_kcalloc(dev, num_cores, sizeof(*rdev->cores), GFP_KERNEL);
+ 	if (!rdev->cores)
+ 		return ERR_PTR(-ENOMEM);
+diff --git a/drivers/accel/rocket/rocket_drv.c b/drivers/accel/rocket/rocket_drv.c
+index f6ef4c7ae..f29374127 100644
+--- a/drivers/accel/rocket/rocket_drv.c
++++ b/drivers/accel/rocket/rocket_drv.c
+@@ -214,6 +214,7 @@ static void rocket_remove(struct platform_device *pdev)
+ 
+ static const struct of_device_id dt_match[] = {
+ 	{ .compatible = "rockchip,rk3588-rknn-core" },
++	{ .compatible = "rockchip,rk3576-rknn-core" },
+ 	{}
+ };
+ MODULE_DEVICE_TABLE(of, dt_match);
+diff --git a/drivers/accel/rocket/rocket_job.c b/drivers/accel/rocket/rocket_job.c
+index acd606160..b135ef98e 100644
+--- a/drivers/accel/rocket/rocket_job.c
++++ b/drivers/accel/rocket/rocket_job.c
+@@ -7,6 +7,7 @@
+ #include <drm/drm_file.h>
+ #include <drm/drm_gem.h>
+ #include <drm/rocket_accel.h>
++#include <linux/hrtimer.h>
+ #include <linux/interrupt.h>
+ #include <linux/iommu.h>
+ #include <linux/platform_device.h>
+@@ -20,6 +21,16 @@
+ 
+ #define JOB_TIMEOUT_MS 500
+ 
++/*
++ * RK3576: INTERRUPT_MASK bits 28-29 are read-only (hardware rejects the write),
++ * so the PC_DONE completion signal cannot be routed to the GIC via the normal
++ * interrupt-mask path.  We poll OPERATION_ENABLE every RK3576_POLL_INTERVAL_NS
++ * instead of waiting for a completion IRQ.
++ */
++#define PC_INTERRUPT_MASK_RK3576_PC_DONE_0  0x10000000u
++#define PC_INTERRUPT_MASK_RK3576_PC_DONE_1  0x20000000u
++#define RK3576_POLL_INTERVAL_NS  1000000LL  /* 1 ms */
++
+ static struct rocket_job *
+ to_rocket_job(struct drm_sched_job *sched_job)
+ {
+@@ -111,8 +122,10 @@ static void rocket_job_hw_submit(struct rocket_core *core, struct rocket_job *jo
+ 	unsigned int extra_bit;
+ 
+ 	/* Don't queue the job if a reset is in progress */
+-	if (atomic_read(&core->reset.pending))
++	if (atomic_read(&core->reset.pending)) {
++		dev_err(core->dev, "rocket_job_hw_submit: bailing, reset pending\n");
+ 		return;
++	}
+ 
+ 	/* GO ! */
+ 
+@@ -137,8 +150,25 @@ static void rocket_job_hw_submit(struct rocket_core *core, struct rocket_job *jo
+ 	rocket_pc_writel(core, REGISTER_AMOUNTS,
+ 			 PC_REGISTER_AMOUNTS_PC_DATA_AMOUNT((task->regcmd_count + 1) / 2 - 1));
+ 
+-	rocket_pc_writel(core, INTERRUPT_MASK, PC_INTERRUPT_MASK_DPU_0 | PC_INTERRUPT_MASK_DPU_1);
+-	rocket_pc_writel(core, INTERRUPT_CLEAR, PC_INTERRUPT_CLEAR_DPU_0 | PC_INTERRUPT_CLEAR_DPU_1);
++	/*
++	 * Enable DMA-error interrupts (bits 4-13 are writeable in INTERRUPT_MASK).
++	 * Bits 28-29 (PC_DONE_0/1) are read-only in INTERRUPT_MASK on RK3576, so
++	 * completion detection uses hrtimer polling instead of interrupts.
++	 */
++	rocket_pc_writel(core, INTERRUPT_MASK,
++			 PC_INTERRUPT_MASK_DPU_0    | PC_INTERRUPT_MASK_DPU_1    |
++			 PC_INTERRUPT_MASK_CORE_0   | PC_INTERRUPT_MASK_CORE_1   |
++			 PC_INTERRUPT_MASK_PPU_0    | PC_INTERRUPT_MASK_PPU_1    |
++			 PC_INTERRUPT_MASK_CNA_CSC_0| PC_INTERRUPT_MASK_CNA_CSC_1|
++			 PC_INTERRUPT_MASK_DMA_READ_ERROR |
++			 PC_INTERRUPT_MASK_DMA_WRITE_ERROR);
++	rocket_pc_writel(core, INTERRUPT_CLEAR,
++			 PC_INTERRUPT_CLEAR_DPU_0    | PC_INTERRUPT_CLEAR_DPU_1    |
++			 PC_INTERRUPT_CLEAR_CORE_0   | PC_INTERRUPT_CLEAR_CORE_1   |
++			 PC_INTERRUPT_CLEAR_PPU_0    | PC_INTERRUPT_CLEAR_PPU_1    |
++			 PC_INTERRUPT_CLEAR_CNA_CSC_0| PC_INTERRUPT_CLEAR_CNA_CSC_1|
++			 PC_INTERRUPT_MASK_RK3576_PC_DONE_0 |
++			 PC_INTERRUPT_MASK_RK3576_PC_DONE_1);
+ 
+ 	rocket_pc_writel(core, TASK_CON, PC_TASK_CON_RESERVED_0(1) |
+ 					 PC_TASK_CON_TASK_COUNT_CLEAR(1) |
+@@ -149,7 +179,10 @@ static void rocket_job_hw_submit(struct rocket_core *core, struct rocket_job *jo
+ 
+ 	rocket_pc_writel(core, OPERATION_ENABLE, PC_OPERATION_ENABLE_OP_EN(1));
+ 
+-	dev_dbg(core->dev, "Submitted regcmd at 0x%llx to core %d", task->regcmd, core->index);
++	/* Poll for completion: bits 28-29 (PC_DONE) can't be enabled in INTERRUPT_MASK. */
++	atomic_set(&core->poll_active, 1);
++	hrtimer_start(&core->poll_timer, ns_to_ktime(RK3576_POLL_INTERVAL_NS),
++		      HRTIMER_MODE_REL);
+ }
+ 
+ static int rocket_acquire_object_fences(struct drm_gem_object **bos,
+@@ -311,12 +344,16 @@ static struct dma_fence *rocket_job_run(struct drm_sched_job *sched_job)
+ 	job->done_fence = dma_fence_get(fence);
+ 
+ 	ret = pm_runtime_get_sync(core->dev);
+-	if (ret < 0)
++	if (ret < 0) {
++		dev_err(core->dev, "rocket_job_run: pm_runtime_get_sync failed: %d\n", ret);
+ 		return fence;
++	}
+ 
+ 	ret = iommu_attach_group(job->domain->domain, core->iommu_group);
+-	if (ret < 0)
++	if (ret < 0) {
++		dev_err(core->dev, "rocket_job_run: iommu_attach_group failed: %d\n", ret);
+ 		return fence;
++	}
+ 
+ 	scoped_guard(mutex, &core->job_lock) {
+ 		core->in_flight_job = job;
+@@ -326,56 +363,100 @@ static struct dma_fence *rocket_job_run(struct drm_sched_job *sched_job)
+ 	return fence;
+ }
+ 
++static void rocket_job_handle_irq(struct rocket_core *core);
++
++static enum hrtimer_restart rocket_poll_timer_fn(struct hrtimer *timer)
++{
++	struct rocket_core *core = container_of(timer, struct rocket_core, poll_timer);
++
++	if (!atomic_read(&core->poll_active))
++		return HRTIMER_NORESTART;
++
++	/*
++	 * On RK3576, OPERATION_ENABLE is not cleared by hardware on completion;
++	 * check INTERRUPT_RAW_STATUS bits 28-29 (PC_DONE_0/1) instead.
++	 */
++	if (rocket_pc_readl(core, OPERATION_ENABLE) == 0 ||
++	    (rocket_pc_readl(core, INTERRUPT_RAW_STATUS) &
++	     (PC_INTERRUPT_MASK_RK3576_PC_DONE_0 |
++	      PC_INTERRUPT_MASK_RK3576_PC_DONE_1))) {
++		atomic_set(&core->poll_active, 0);
++		schedule_work(&core->poll_work);
++		return HRTIMER_NORESTART;
++	}
++
++	hrtimer_forward_now(timer, ns_to_ktime(RK3576_POLL_INTERVAL_NS));
++	return HRTIMER_RESTART;
++}
++
++static void rocket_poll_work_fn(struct work_struct *work)
++{
++	struct rocket_core *core = container_of(work, struct rocket_core, poll_work);
++
++	dev_dbg(core->dev, "polled completion: OP_EN=0\n");
++	rocket_job_handle_irq(core);
++}
++
+ static void rocket_job_handle_irq(struct rocket_core *core)
+ {
++	struct rocket_job *job;
++
++	/* Stop the completion poll — we're handling it now. */
++	atomic_set(&core->poll_active, 0);
++	hrtimer_cancel(&core->poll_timer);
++
+ 	pm_runtime_mark_last_busy(core->dev);
+ 
+ 	rocket_pc_writel(core, OPERATION_ENABLE, 0x0);
+-	rocket_pc_writel(core, INTERRUPT_CLEAR, 0x1ffff);
+-
+-	scoped_guard(mutex, &core->job_lock)
+-		if (core->in_flight_job) {
+-			if (core->in_flight_job->next_task_idx < core->in_flight_job->task_count) {
+-				rocket_job_hw_submit(core, core->in_flight_job);
+-				return;
+-			}
+-
+-			iommu_detach_group(NULL, iommu_group_get(core->dev));
+-			dma_fence_signal(core->in_flight_job->done_fence);
+-			pm_runtime_put_autosuspend(core->dev);
+-			core->in_flight_job = NULL;
++	rocket_pc_writel(core, INTERRUPT_CLEAR,
++			 0x1ffff |
++			 PC_INTERRUPT_MASK_RK3576_PC_DONE_0 |
++			 PC_INTERRUPT_MASK_RK3576_PC_DONE_1);
++
++	scoped_guard(mutex, &core->job_lock) {
++		job = core->in_flight_job;
++		if (!job)
++			return;
++
++		if (job->next_task_idx < job->task_count) {
++			rocket_job_hw_submit(core, job);
++			return;
+ 		}
++
++		iommu_detach_group(job->domain->domain, core->iommu_group);
++		dma_fence_signal(job->done_fence);
++		pm_runtime_put_autosuspend(core->dev);
++		core->in_flight_job = NULL;
++	}
+ }
+ 
+ static void
+ rocket_reset(struct rocket_core *core, struct drm_sched_job *bad)
+ {
++	struct rocket_job *job;
++
+ 	if (!atomic_read(&core->reset.pending))
+ 		return;
+ 
++	atomic_set(&core->poll_active, 0);
++	hrtimer_cancel(&core->poll_timer);
++	cancel_work(&core->poll_work);
++
+ 	drm_sched_stop(&core->sched, bad);
+ 
+-	/*
+-	 * Remaining interrupts have been handled, but we might still have
+-	 * stuck jobs. Let's make sure the PM counters stay balanced by
+-	 * manually calling pm_runtime_put_noidle().
+-	 */
+ 	scoped_guard(mutex, &core->job_lock) {
+-		if (core->in_flight_job)
++		job = core->in_flight_job;
++		if (job) {
+ 			pm_runtime_put_noidle(core->dev);
+-
+-		iommu_detach_group(NULL, core->iommu_group);
+-
+-		core->in_flight_job = NULL;
++			iommu_detach_group(job->domain->domain, core->iommu_group);
++			core->in_flight_job = NULL;
++		}
+ 	}
+ 
+-	/* Proceed with reset now. */
+ 	rocket_core_reset(core);
+ 
+-	/* NPU has been reset, we can clear the reset pending bit. */
+ 	atomic_set(&core->reset.pending, 0);
+ 
+-	/* Restart the scheduler */
+ 	drm_sched_start(&core->sched, 0);
+ }
+ 
+@@ -385,7 +466,14 @@ static enum drm_gpu_sched_stat rocket_job_timedout(struct drm_sched_job *sched_j
+ 	struct rocket_device *rdev = job->rdev;
+ 	struct rocket_core *core = sched_to_core(rdev, sched_job->sched);
+ 
+-	dev_err(core->dev, "NPU job timed out");
++	if (pm_runtime_active(core->dev))
++		dev_err(core->dev,
++			"NPU job timed out: RAW_STATUS=0x%08x MASK=0x%08x OP_EN=0x%08x\n",
++			rocket_pc_readl(core, INTERRUPT_RAW_STATUS),
++			rocket_pc_readl(core, INTERRUPT_MASK),
++			rocket_pc_readl(core, OPERATION_ENABLE));
++	else
++		dev_err(core->dev, "NPU job timed out (device not active)\n");
+ 
+ 	atomic_set(&core->reset.pending, 1);
+ 	rocket_reset(core, sched_job);
+@@ -420,14 +508,18 @@ static irqreturn_t rocket_job_irq_handler(int irq, void *data)
+ {
+ 	struct rocket_core *core = data;
+ 	u32 raw_status = rocket_pc_readl(core, INTERRUPT_RAW_STATUS);
++	/* Only bits 0-13 are writable in INTERRUPT_MASK (and thus routable to
++	 * the GIC).  Bits 28-29 (PC_DONE) are read-only in INTERRUPT_MASK and
++	 * completion is handled by hrtimer polling instead. */
++	u32 active = raw_status & 0x3fff;
++
++	if (!active)
++		return IRQ_NONE;
+ 
+ 	WARN_ON(raw_status & PC_INTERRUPT_RAW_STATUS_DMA_READ_ERROR);
+ 	WARN_ON(raw_status & PC_INTERRUPT_RAW_STATUS_DMA_WRITE_ERROR);
+ 
+-	if (!(raw_status & PC_INTERRUPT_RAW_STATUS_DPU_0 ||
+-	      raw_status & PC_INTERRUPT_RAW_STATUS_DPU_1))
+-		return IRQ_NONE;
+-
++	rocket_pc_writel(core, INTERRUPT_CLEAR, active);
+ 	rocket_pc_writel(core, INTERRUPT_MASK, 0x0);
+ 
+ 	return IRQ_WAKE_THREAD;
+@@ -446,6 +538,10 @@ int rocket_job_init(struct rocket_core *core)
+ 	int ret;
+ 
+ 	INIT_WORK(&core->reset.work, rocket_reset_work);
++	INIT_WORK(&core->poll_work, rocket_poll_work_fn);
++	hrtimer_setup(&core->poll_timer, rocket_poll_timer_fn, CLOCK_MONOTONIC,
++		      HRTIMER_MODE_REL);
++	atomic_set(&core->poll_active, 0);
+ 	spin_lock_init(&core->fence_lock);
+ 	mutex_init(&core->job_lock);
+ 
+@@ -487,6 +583,10 @@ int rocket_job_init(struct rocket_core *core)
+ 
+ void rocket_job_fini(struct rocket_core *core)
+ {
++	atomic_set(&core->poll_active, 0);
++	hrtimer_cancel(&core->poll_timer);
++	cancel_work_sync(&core->poll_work);
++
+ 	drm_sched_fini(&core->sched);
+ 
+ 	cancel_work_sync(&core->reset.work);
+-- 
+2.50.1
+
