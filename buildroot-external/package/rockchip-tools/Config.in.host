@@ -1,0 +1,4 @@
+config BR2_PACKAGE_ROCKCHIP_TOOLS
+	bool "Rockchip devel tools"
+	help
+	  Rockchip devel tools (required by generating firmeare)
